@@ -9,12 +9,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION="${1:?usage: scripts/release.sh <version>, for example 0.2.0}"
+VERSION="${VERSION#v}"
 TAG="v$VERSION"
 REPO="mralifakbar/panefold"
 
 [[ -z "$(git status --porcelain)" ]] || { echo "Commit or stash your changes first." >&2; exit 1; }
 grep -q "^## \[$VERSION\]" CHANGELOG.md || { echo "Add a ## [$VERSION] section to CHANGELOG.md first." >&2; exit 1; }
-git rev-parse "$TAG" >/dev/null 2>&1 && { echo "$TAG already exists." >&2; exit 1; }
+git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && { echo "$TAG already exists." >&2; exit 1; }
+gh auth status >/dev/null 2>&1 || { echo "Sign in to the GitHub CLI first: gh auth login" >&2; exit 1; }
 
 VERSION="$VERSION" ./scripts/ci.sh
 
@@ -36,7 +38,8 @@ awk -v v="[$VERSION]" '/^## \[/ { p = index($0, v) > 0; next } /^\[[^]]+\]: / { 
   echo '```'
 } >> $NOTES
 
+git push origin HEAD
 git tag -a "$TAG" -m "Panefold $VERSION"
 git push origin "$TAG"
 gh release create "$TAG" "$ZIP" build/SHA256SUMS.txt --repo "$REPO" --title "Panefold $VERSION" --notes-file $NOTES --verify-tag
-echo "✓ Released $TAG"
+echo "✓ Released Panefold $VERSION: https://github.com/$REPO/releases/tag/$TAG"
