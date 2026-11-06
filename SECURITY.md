@@ -26,4 +26,4 @@ In Panefold's preferences (`~/Library/Preferences/dev.panefold.Panefold.plist`),
 
 ## Builds
 
-Release builds are made with `scripts/release.sh` from a tagged commit, signed with the maintainer's Developer ID certificate, with a SHA-256 checksum on the release page.
+Release builds are made with `scripts/release.sh` from a tagged commit, signed with a Developer ID (team 5583X832TP) and notarized by Apple, with a SHA-256 checksum on the release page. Run `codesign -dv` on the app to see the team.

@@ -98,12 +98,9 @@ telemetry.
 
 1. Grab `Panefold-x.y.z.zip` from the [latest release](https://github.com/mralifakbar/panefold/releases/latest).
 2. Unzip it and move **Panefold.app** to `/Applications`.
-3. If macOS says it can't verify the app, go to **System Settings › Privacy & Security**,
-   scroll down and click **Open Anyway**, or run:
 
-   ```sh
-   xattr -dr com.apple.quarantine /Applications/Panefold.app
-   ```
+Releases are signed with a Developer ID and notarized by Apple, so macOS opens them
+without a warning.
 
 ### Build from source
 
@@ -117,7 +114,8 @@ cd panefold
 
 `./build.sh --universal --zip` builds what releases ship: an arm64 + x86_64 app and a zip.
 The script signs with your first Developer ID certificate, then Apple Development, else
-ad-hoc; pick one with `PANEFOLD_SIGN_IDENTITY`. macOS ties the Accessibility permission to
+ad-hoc; pick one with `PANEFOLD_SIGN_IDENTITY`. With a `Developer ID Application`
+certificate, `scripts/notarize.sh build/Panefold.app` notarizes the result the way releases are. macOS ties the Accessibility permission to
 the signature, so an ad-hoc build needs it switched off and on again after each rebuild.
 
 ## Usage
@@ -213,7 +211,7 @@ swift build                # debug build
 swift test                 # unit tests
 ./build.sh && open build/Panefold.app
 ./scripts/ci.sh            # every check, run locally: tests, translations, universal build
-./scripts/release.sh 0.2.0 # checks, tags and publishes a GitHub release from this Mac
+./scripts/release.sh 0.2.0 # signs, notarizes, tags and publishes a release from this Mac
 ```
 
 There is no hosted CI: checks and releases run on a Mac with `scripts/ci.sh` and

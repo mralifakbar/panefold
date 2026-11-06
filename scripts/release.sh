@@ -1,26 +1,60 @@
 #!/bin/zsh
-# Publishes a release from this Mac: runs every check, builds the universal app, tags the
-# commit, and uploads the zip with its SHA-256 to GitHub Releases. Needs the GitHub CLI (gh).
+# Publishes a release from this Mac. There is no hosted CI: this script is the release pipeline.
 #
-#   ./scripts/release.sh 0.2.0
+#   ./scripts/release.sh 1.2.0
 #
-# Add the version to CHANGELOG.md first; its section becomes the release notes.
+# It checks everything first, then: runs the tests, builds the universal app signed with the
+# Developer ID, notarizes and staples it, zips it with its SHA-256, pushes the branch and a
+# v1.2.0 tag, and publishes the GitHub release with the CHANGELOG.md section as notes.
+#
+# Before the first release on this Mac:
+#   - the Developer ID Application certificate in the login keychain (Xcode › Settings › Accounts)
+#   - notarization credentials saved once, see scripts/notarize.sh
+#   - the GitHub CLI signed in: gh auth login
+#
+# Move the Unreleased notes in CHANGELOG.md under "## [1.2.0]" and commit before running it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${1:?usage: scripts/release.sh <version>, for example 0.2.0}"
+VERSION="${1:?usage: scripts/release.sh <version>, for example 1.2.0}"
 VERSION="${VERSION#v}"
 TAG="v$VERSION"
 REPO="mralifakbar/panefold"
-
-[[ -z "$(git status --porcelain)" ]] || { echo "Commit or stash your changes first." >&2; exit 1; }
-grep -q "^## \[$VERSION\]" CHANGELOG.md || { echo "Add a ## [$VERSION] section to CHANGELOG.md first." >&2; exit 1; }
-git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && { echo "$TAG already exists." >&2; exit 1; }
-gh auth status >/dev/null 2>&1 || { echo "Sign in to the GitHub CLI first: gh auth login" >&2; exit 1; }
-
-VERSION="$VERSION" ./scripts/ci.sh
-
+APP="build/Panefold.app"
 ZIP="build/Panefold-$VERSION.zip"
+IDENTITY="${SIGN_IDENTITY:-Developer ID Application: Alif Akbar Kartadinata (5583X832TP)}"
+
+fail() { echo "✗ $1" >&2; exit 1; }
+
+echo "› Preflight"
+[[ "$(git branch --show-current)" == main ]] || fail "Release from main."
+[[ -z "$(git status --porcelain)" ]] || fail "Commit or stash your changes first."
+git fetch -q origin
+[[ -z "$(git log HEAD..origin/main --oneline)" ]] || fail "origin/main has commits you don't have: git pull first."
+grep -q "^## \[$VERSION\]" CHANGELOG.md || fail "Add a ## [$VERSION] section to CHANGELOG.md first."
+git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && fail "$TAG already exists."
+git ls-remote --exit-code --tags origin "$TAG" >/dev/null 2>&1 && fail "$TAG already exists on GitHub."
+security find-identity -v -p codesigning | grep -qF "\"$IDENTITY\"" || fail "No \"$IDENTITY\" certificate in the keychain."
+gh auth status >/dev/null 2>&1 || fail "Sign in to the GitHub CLI first: gh auth login"
+if [[ -z "${NOTARY_KEY_PATH:-}" ]]; then
+  xcrun notarytool history --keychain-profile "${NOTARY_PROFILE:-notary}" >/dev/null 2>&1 \
+    || fail "No notarization credentials. Save them once: see the top of scripts/notarize.sh."
+fi
+
+echo "› Unit tests"
+swift test
+
+echo "› Signed universal build"
+rm -rf "$APP"
+VERSION="$VERSION" PANEFOLD_SIGN_IDENTITY="$IDENTITY" ./build.sh --universal
+codesign --verify --strict --deep "$APP"
+
+echo "› Notarize"
+scripts/notarize.sh "$APP"
+
+echo "› Package"
+rm -f "$ZIP"
+ditto -c -k --keepParent "$APP" "$ZIP"
 (cd build && shasum -a 256 "Panefold-$VERSION.zip" | tee SHA256SUMS.txt)
 
 NOTES=build/notes.md
@@ -30,14 +64,17 @@ awk -v v="[$VERSION]" '/^## \[/ { p = index($0, v) > 0; next } /^\[[^]]+\]: / { 
   echo "### Install"
   echo
   echo "1. Download **Panefold-$VERSION.zip**, unzip it, and move **Panefold.app** to Applications."
-  echo "2. Open it and follow the welcome tour. It asks for Accessibility access, which macOS requires before any app can move other apps' windows."
+  echo "2. Open it. The app is signed with a Developer ID and notarized by Apple, so macOS opens it without a warning."
+  echo "3. Follow the welcome tour. It asks for Accessibility access, which macOS requires before any app can move other apps' windows."
   echo
   echo "SHA-256:"
   echo '```'
   cat build/SHA256SUMS.txt
   echo '```'
 } >> $NOTES
+cat $NOTES
 
+echo "› Publish"
 git push origin HEAD
 git tag -a "$TAG" -m "Panefold $VERSION"
 git push origin "$TAG"

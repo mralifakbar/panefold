@@ -36,6 +36,7 @@ scripts/make-icon.swift   draws the app icon
 scripts/extract-strings.py, check-strings.py   list interface strings, check translations
 build.sh                  builds, signs and packages the .app
 scripts/ci.sh, release.sh   local checks, and publishing a release
+scripts/notarize.sh       notarizes and staples a Developer ID build
 ```
 
 ## Development switches
@@ -68,5 +69,17 @@ done
 ## Translating
 
 Copy `Resources/es.lproj/Localizable.strings` to `Resources/<language>.lproj/`, translate the right-hand side, and keep every `%@` and `%lld`. Use `%1$@`, `%2$@` to reorder them. Then run `python3 scripts/check-strings.py`.
+
+## Releasing (maintainers)
+
+1. Move the **Unreleased** notes in `CHANGELOG.md` under a new version heading.
+2. Commit, then run `./scripts/release.sh 0.2.0` on your Mac. There is no hosted CI:
+   the script checks everything first, then runs the tests, builds the universal app
+   signed with the Developer ID, notarizes and staples it, pushes `main` and the
+   `v0.2.0` tag, and publishes the GitHub release with the zip, its SHA-256 and the
+   changelog section as notes.
+3. Once per Mac: the Developer ID Application certificate in the keychain, notarization
+   credentials saved with `xcrun notarytool store-credentials notary …` (see the top of
+   `scripts/notarize.sh`), and `gh auth login`.
 
 By contributing, you agree that your work is released under the [MIT License](LICENSE).
